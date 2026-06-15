@@ -1,12 +1,106 @@
 {
-  "team": "TODO-team-name",
+  "team": "2A202600857-Pham-Tran-Nguyen-Phu",
   "schema_version": 1,
   "findings": [
     {
+      "fault_class": "arithmetic_error",
+      "evidence": {
+        "metric": "config.temperature",
+        "observed": "temperature=1.6 (default) causes non-deterministic arithmetic; agent estimates totals instead of computing exactly",
+        "trace_ids": []
+      },
+      "root_cause": "temperature set to 1.6 makes the LLM inconsistent on exact integer arithmetic (floor division for discounts)",
+      "suggested_fix": "temperature=0.2 in config.json; self_consistency=2; explicit formula in prompt.txt"
+    },
+    {
+      "fault_class": "pii_leak",
+      "evidence": {
+        "metric": "config.redact_pii",
+        "observed": "redact_pii=false (default); agent echoes customer email and phone from the system prompt instruction to 'Help the customer'",
+        "trace_ids": []
+      },
+      "root_cause": "no PII redaction in config, and original prompt.txt did not instruct the agent to suppress customer contact info",
+      "suggested_fix": "redact_pii=true in config.json; 'Never repeat customer email or phone' rule in prompt.txt; redact() in wrapper.py"
+    },
+    {
+      "fault_class": "tool_overuse",
+      "evidence": {
+        "metric": "config.tool_budget",
+        "observed": "tool_budget=0 (unlimited) and original prompt had no tool economy rule; agent calls the same tool multiple times",
+        "trace_ids": []
+      },
+      "root_cause": "no tool call limit and prompt encouraged 'checking' without bounding repetitions",
+      "suggested_fix": "tool_budget=4 in config.json; 'each tool at most once' rule in prompt.txt"
+    },
+    {
+      "fault_class": "infinite_loop",
+      "evidence": {
+        "metric": "config.loop_guard + config.max_steps",
+        "observed": "loop_guard=false and max_steps=12 (default); agent can repeat identical tool calls until max_steps",
+        "trace_ids": []
+      },
+      "root_cause": "loop detection disabled; agent has no guard against cycling on the same tool action",
+      "suggested_fix": "loop_guard=true; max_steps=6 in config.json"
+    },
+    {
+      "fault_class": "error_spike",
+      "evidence": {
+        "metric": "config.tool_error_rate + config.retry",
+        "observed": "tool_error_rate=0.18 (18% of tool calls fail by design) with retry.enabled=false and max_attempts=1",
+        "trace_ids": []
+      },
+      "root_cause": "high injected tool error rate with no retry mechanism causes ~18% of requests to fail outright",
+      "suggested_fix": "retry.enabled=true, max_attempts=3, backoff_ms=300 in config.json; wrapper retry on non-ok status"
+    },
+    {
+      "fault_class": "cost_blowup",
+      "evidence": {
+        "metric": "config.model_price_tier + config.verbose_system + config.context_size",
+        "observed": "model_price_tier=premium, verbose_system=true (large system message), context_size=8, max_completion_tokens=2000",
+        "trace_ids": []
+      },
+      "root_cause": "premium tier pricing combined with verbose system messages and large context window inflates token usage per request",
+      "suggested_fix": "model_price_tier=standard; verbose_system=false; context_size=4; max_completion_tokens=512"
+    },
+    {
+      "fault_class": "tool_failure",
+      "evidence": {
+        "metric": "config.normalize_unicode + config.catalog_override",
+        "observed": "normalize_unicode=false causes diacritic city names (e.g. 'Hà Nội') to fail tool lookup; catalog_override injects fake out-of-stock for 'macbook'",
+        "trace_ids": []
+      },
+      "root_cause": "Unicode not normalized before passing to tools; catalog override injects false inventory data",
+      "suggested_fix": "normalize_unicode=true; catalog_override={} in config.json"
+    },
+    {
+      "fault_class": "quality_drift",
+      "evidence": {
+        "metric": "config.session_drift_rate + config.context_reset_every",
+        "observed": "session_drift_rate=0.06 introduces drift over turns; context_reset_every=0 means sessions never reset",
+        "trace_ids": []
+      },
+      "root_cause": "drift accumulates over long sessions with no reset mechanism, degrading answer quality in later turns",
+      "suggested_fix": "session_drift_rate=0.0; context_reset_every=5 in config.json; wrapper logs DRIFT_SIGNAL at turn_index>=3"
+    },
+    {
+      "fault_class": "fabrication",
+      "evidence": {
+        "metric": "solution/prompt.txt (original)",
+        "observed": "original prompt 'Help the customer and give a total in VND' gives no grounding rule; agent invents totals for out-of-stock or unknown items",
+        "trace_ids": []
+      },
+      "root_cause": "no instruction to use ONLY tool data; no instruction to refuse when item is unavailable",
+      "suggested_fix": "rewrite prompt.txt with explicit grounding rule and refusal condition"
+    },
+    {
       "fault_class": "latency_spike",
-      "evidence": {"metric": "latency_p95_ms", "observed": "TODO from your telemetry", "trace_ids": []},
-      "root_cause": "TODO: what config knob or behavior causes it?",
-      "suggested_fix": "TODO: config change and/or wrapper mitigation"
+      "evidence": {
+        "metric": "config.cache + config.timeout_ms",
+        "observed": "cache.enabled=false means identical questions always hit the LLM; timeout_ms=0 allows unbounded latency",
+        "trace_ids": []
+      },
+      "root_cause": "no caching for repeated questions and no timeout cap create long-tail latency spikes",
+      "suggested_fix": "cache.enabled=true; timeout_ms=15000; thread-safe cache in wrapper.py"
     }
   ]
 }
